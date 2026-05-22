@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  tienda-db:
+    build:
+      context: ./db
+    container_name: tienda-db
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=admin123
+      - MYSQL_DATABASE=tienda_luktek
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - tienda-network
+
+  tienda-ventas-backend:
+    build:
+      context: ./backend/back-Ventas_SpringBoot/Springboot-API-REST
+    container_name: tienda-ventas-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_ENDPOINT=tienda-db
+      - DB_PORT=3306
+      - DB_NAME=tienda_luktek
+      - DB_USERNAME=root
+      - DB_PASSWORD=admin123
+    depends_on:
+      - tienda-db
+    networks:
+      - tienda-network
+
+  tienda-despachos-backend:
+    build:
+      context: ./backend/Springboot-API-REST-DESPACHO
+    container_name: tienda-despachos-backend
+    ports:
+      - "8081:8081"
+    environment:
+      - DB_ENDPOINT=tienda-db
+      - DB_PORT=3306
+      - DB_NAME=tienda_luktek
+      - DB_USERNAME=root
+      - DB_PASSWORD=admin123
+    depends_on:
+      - tienda-db
+    networks:
+      - tienda-network
+
+  tienda-frontend:
+    build:
+      context: ./frontend
+    container_name: tienda-frontend
+    ports:
+      - "80:80"
+    environment:
+      - BACKEND_VENTAS_HOST=tienda-ventas-backend
+      - BACKEND_DESPACHOS_HOST=tienda-despachos-backend
+    depends_on:
+      - tienda-ventas-backend
+      - tienda-despachos-backend
+    networks:
+      - tienda-network
+
+volumes:
+  dbdata:
+
+networks:
+  tienda-network:
+    driver: bridge

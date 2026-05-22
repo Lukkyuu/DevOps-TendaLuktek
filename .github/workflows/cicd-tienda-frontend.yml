@@ -2,7 +2,7 @@ name: CI/CD Tienda Frontend
 
 on:
   push:
-    branches: [ main ]
+    branches: [ deploy ]
     paths:
       - 'frontend/**'
       - '.github/workflows/cicd-tienda-frontend.yml'
@@ -52,5 +52,5 @@ jobs:
               \"docker pull ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest\",
               \"docker stop tienda-frontend || true\",
               \"docker rm tienda-frontend || true\",
-              \"docker run -d --name tienda-frontend -p 80:80 -e BACKEND_HOST=$BACKEND_PRIVATE_IP ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest\"
+              \"docker run -d --name tienda-frontend -p 80:80 -e BACKEND_VENTAS_HOST=$BACKEND_PRIVATE_IP -e BACKEND_DESPACHOS_HOST=$BACKEND_PRIVATE_IP ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest\"
             ]"
