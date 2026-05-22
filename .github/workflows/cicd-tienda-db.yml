@@ -1,0 +1,47 @@
+name: CI/CD Tienda Database
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'db/**'
+      - '.github/workflows/cicd-tienda-db.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Image to ECR
+        working-directory: ./db
+        run: |
+          docker build -t ${{ secrets.ECR_REPO_URL_DB }}:latest -t ${{ secrets.ECR_REPO_URL_DB }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REPO_URL_DB }}:latest
+          docker push ${{ secrets.ECR_REPO_URL_DB }}:${{ github.sha }}
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_DB_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}",
+              "docker pull ${{ secrets.ECR_REPO_URL_DB }}:latest",
+              "docker stop tienda-db || true",
+              "docker rm tienda-db || true",
+              "docker run -d --name tienda-db -p 3306:3306 -v dbdata:/var/lib/mysql ${{ secrets.ECR_REPO_URL_DB }}:latest"
+            ]'

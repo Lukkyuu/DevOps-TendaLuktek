@@ -1,0 +1,67 @@
+name: CI/CD Tienda Backend
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/cicd-tienda-backend.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Ventas Image
+        working-directory: ./backend/back-Ventas_SpringBoot/Springboot-API-REST
+        run: |
+          docker build -t ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest -t ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-${{ github.sha }} .
+          docker push ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest
+          docker push ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-${{ github.sha }}
+
+      - name: Build, Tag, and Push Despachos Image
+        working-directory: ./backend/Springboot-API-REST-DESPACHO
+        run: |
+          docker build -t ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest -t ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-${{ github.sha }} .
+          docker push ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest
+          docker push ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-${{ github.sha }}
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          # Retrieve DB private IP dynamically
+          DB_PRIVATE_IP=$(aws ec2 describe-instances \
+            --instance-ids "${{ secrets.EC2_DB_INSTANCE_ID }}" \
+            --query "Reservations[0].Instances[0].PrivateIpAddress" \
+            --output text)
+          
+          echo "Resolved Database private IP: $DB_PRIVATE_IP"
+
+          # Deploy both backend containers using SSM
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_BACKEND_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands="[
+              \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}\",
+              \"docker pull ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest\",
+              \"docker pull ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest\",
+              \"docker stop tienda-ventas-backend || true\",
+              \"docker rm tienda-ventas-backend || true\",
+              \"docker stop tienda-despachos-backend || true\",
+              \"docker rm tienda-despachos-backend || true\",
+              \"docker run -d --name tienda-ventas-backend -p 8080:8080 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_perritos -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest\",
+              \"docker run -d --name tienda-despachos-backend -p 8081:8081 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_perritos -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest\"
+            ]"

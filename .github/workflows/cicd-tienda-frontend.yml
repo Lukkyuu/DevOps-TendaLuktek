@@ -1,0 +1,56 @@
+name: CI/CD Tienda Frontend
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/cicd-tienda-frontend.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Frontend Image
+        working-directory: ./frontend
+        run: |
+          docker build -t ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest -t ${{ secrets.ECR_REPO_URL_FRONTEND }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest
+          docker push ${{ secrets.ECR_REPO_URL_FRONTEND }}:${{ github.sha }}
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          # Retrieve Backend private IP dynamically
+          BACKEND_PRIVATE_IP=$(aws ec2 describe-instances \
+            --instance-ids "${{ secrets.EC2_BACKEND_INSTANCE_ID }}" \
+            --query "Reservations[0].Instances[0].PrivateIpAddress" \
+            --output text)
+          
+          echo "Resolved Backend private IP: $BACKEND_PRIVATE_IP"
+
+          # Deploy frontend container using SSM
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_FRONTEND_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands="[
+              \"aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}\",
+              \"docker pull ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest\",
+              \"docker stop tienda-frontend || true\",
+              \"docker rm tienda-frontend || true\",
+              \"docker run -d --name tienda-frontend -p 80:80 -e BACKEND_HOST=$BACKEND_PRIVATE_IP ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest\"
+            ]"
