@@ -62,6 +62,6 @@ jobs:
               \"docker rm tienda-ventas-backend || true\",
               \"docker stop tienda-despachos-backend || true\",
               \"docker rm tienda-despachos-backend || true\",
-              \"docker run -d --name tienda-ventas-backend -p 8080:8080 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_perritos -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest\",
-              \"docker run -d --name tienda-despachos-backend -p 8081:8081 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_perritos -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest\"
+              \"docker run -d --name tienda-ventas-backend -p 8080:8080 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_luktek -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest\",
+              \"docker run -d --name tienda-despachos-backend -p 8081:8081 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_luktek -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest\"
             ]"

@@ -77,5 +77,5 @@ Si necesita interactuar con las instancias EC2 o verificar fallos, los comandos 
 
 * **Verificación de persistencia/datos (en la DB)**:
   ```bash
-  sudo docker exec -it tienda-db mysql -u root -padmin123 -e "USE tienda_perritos; SELECT * FROM productos;"
+  sudo docker exec -it tienda-db mysql -u root -padmin123 -e "USE tienda_luktek; SELECT * FROM productos;"
   ```

@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS tienda_perritos;
-USE tienda_perritos;
+CREATE DATABASE IF NOT EXISTS tienda_luktek;
+USE tienda_luktek;
 
 -- Table structure for productos
 CREATE TABLE IF NOT EXISTS productos (

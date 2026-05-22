@@ -1,7 +1,7 @@
 FROM mysql:8.0
 
 # Set environment variables for the database configuration
-ENV MYSQL_DATABASE=tienda_perritos
+ENV MYSQL_DATABASE=tienda_luktek
 ENV MYSQL_ROOT_PASSWORD=admin123
 
 # Copy the SQL initialization script to the directory executed at startup
