@@ -40,28 +40,42 @@ jobs:
           docker push ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest
           docker push ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-${{ github.sha }}
 
-      - name: Deploy to EC2 via SSM
+      - name: Download Task Definition (Ventas)
         run: |
-          # Retrieve DB private IP dynamically
-          DB_PRIVATE_IP=$(aws ec2 describe-instances \
-            --instance-ids "${{ secrets.EC2_DB_INSTANCE_ID }}" \
-            --query "Reservations[0].Instances[0].PrivateIpAddress" \
-            --output text)
-          
-          echo "Resolved Database private IP: $DB_PRIVATE_IP"
+          aws ecs describe-task-definition --task-definition tienda-ventas-backend --query taskDefinition > task-def-ventas.json
+      
+      - name: Download Task Definition (Despachos)
+        run: |
+          aws ecs describe-task-definition --task-definition tienda-despachos-backend --query taskDefinition > task-def-despachos.json
 
-          # Deploy both backend containers using SSM
-          aws ssm send-command \
-            --instance-ids "${{ secrets.EC2_BACKEND_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --parameters commands="[
-              \"aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}\",
-              \"docker pull ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest\",
-              \"docker pull ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest\",
-              \"docker stop tienda-ventas-backend || true\",
-              \"docker rm tienda-ventas-backend || true\",
-              \"docker stop tienda-despachos-backend || true\",
-              \"docker rm tienda-despachos-backend || true\",
-              \"docker run -d --name tienda-ventas-backend -p 8080:8080 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_luktek -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-latest\",
-              \"docker run -d --name tienda-despachos-backend -p 8081:8081 -e DB_ENDPOINT=$DB_PRIVATE_IP -e DB_PORT=3306 -e DB_NAME=tienda_luktek -e DB_USERNAME=root -e DB_PASSWORD=admin123 ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-latest\"
-            ]"
+      - name: Fill in the new image ID in the Amazon ECS task definition (Ventas)
+        id: task-def-ventas
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def-ventas.json
+          container-name: ventas-backend
+          image: ${{ secrets.ECR_REPO_URL_BACKEND }}:ventas-${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition (Ventas)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def-ventas.outputs.task-definition }}
+          service: ventas-service
+          cluster: tienda-cluster
+          wait-for-service-stability: true
+
+      - name: Fill in the new image ID in the Amazon ECS task definition (Despachos)
+        id: task-def-despachos
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def-despachos.json
+          container-name: despachos-backend
+          image: ${{ secrets.ECR_REPO_URL_BACKEND }}:despachos-${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition (Despachos)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def-despachos.outputs.task-definition }}
+          service: despachos-service
+          cluster: tienda-cluster
+          wait-for-service-stability: true

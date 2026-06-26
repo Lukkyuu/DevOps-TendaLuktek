@@ -1,81 +1,86 @@
-# DevOps-TendaLuktek
+# DevOps-TendaLuktek (Migración a AWS ECS Fargate)
 
-Proyecto Semestral de DevOps 2026. Guía completa de arquitectura, secretos de CI/CD, flujo de despliegue y comandos útiles para depuración.
+Proyecto Semestral de DevOps 2026. Guía completa de arquitectura, infraestructura como código (Terraform), secretos de CI/CD, flujo de despliegue y configuración de Autoscaling.
 
 ---
 
-## 🏗️ Arquitectura del Proyecto y Configuración de Puertos
+## 🏗️ Arquitectura del Proyecto (AWS ECS Fargate)
 
-El proyecto está dividido en tres componentes principales, cada uno con su propio `Dockerfile` y pipeline de GitHub Actions independiente:
+El proyecto ha sido migrado desde un despliegue monolítico en EC2 hacia una arquitectura escalable de contenedores administrados en **AWS Elastic Container Service (ECS)** usando **Fargate**.
 
-| Capa / Componente | Puerto | Contenedor | Notas Técnicas |
+### Componentes de la Arquitectura Final:
+- **Application Load Balancer (ALB)**: Expone el Frontend al público en el puerto 80 y balancea la carga entre las tareas.
+- **ECS Cluster (Fargate)**: Clúster `tienda-cluster` ejecutando las aplicaciones de forma serverless.
+- **Service Discovery (Cloud Map)**: Permite la resolución DNS interna para la comunicación Front -> Back.
+  - El backend de ventas está en `ventas.tienda.local:8080`.
+  - El backend de despachos está en `despachos.tienda.local:8081`.
+- **Autoescalado (Target Tracking)**: Configurado en ECS para escalar horizontalmente las tareas (de 1 a 4 réplicas) en caso de que el uso de CPU promedio supere el 50%.
+- **VPC & Subnets Públicas**: Los contenedores Fargate usan subredes públicas por simplicidad y reducción de costos (sin NAT Gateway), pero se protegen tras Security Groups.
+
+| Capa / Componente | Puerto | Contenedor ECS | Notas Técnicas |
 | :--- | :--- | :--- | :--- |
-| **Base de Datos (`db/`)** | `3306` | `tienda-db` | Motor MySQL. Se utiliza un volumen llamado `dbdata` para la persistencia de datos. |
-| **Backend (`backend/`)** | `3001` | `tienda-backend` | Entorno Node.js. Depende de variables de entorno para conectarse a la base de datos (`DB_HOST`, `DB_USER`, `DB_PASSWORD`, etc.). |
-| **Frontend (`frontend/`)** | `80` | `tienda-frontend` | Servidor Nginx que sirve el build público del cliente para el navegador. |
+| **Base de Datos** | `3306` | - | Manteniendo la base de datos externa / EC2. Su IP se inyecta por variables de entorno en Terraform. |
+| **Backend Ventas** | `8080` | `ventas-backend` | Fargate. Depende de las variables de entorno de BD (`DB_ENDPOINT`, etc.). |
+| **Backend Despachos**| `8081` | `despachos-backend` | Fargate. Depende de las variables de entorno de BD. |
+| **Frontend** | `80` | `frontend` | Servidor Nginx detrás del ALB. Proxy interno a los Backends. |
 
 > [!NOTE]
-> **Estructura en el repositorio**: Cada capa tiene su directorio raíz (`frontend/`, `backend/`, `db/`) y los workflows residen en `.github/workflows/`.
+> **Estructura en el repositorio**: El nuevo código de infraestructura (IaC) reside en `terraform/` y los flujos automatizados de despliegue a ECS residen en `.github/workflows/`.
 
 ---
 
-## ⚙️ Variables de Entorno y Parámetros
+## ⚙️ Configuración e Infraestructura como Código (Terraform)
 
-Los secretos y credenciales requeridos en el repositorio deben configurarse en GitHub en **Settings** -> **Secrets and variables** -> **Actions**.
+Para levantar el entorno completo desde cero, utiliza los archivos que se encuentran en el directorio `terraform/`.
+
+1. **Configurar Credenciales Localmente** (para ejecutar Terraform):
+   Asegúrate de configurar tus credenciales de AWS en tu terminal local antes de ejecutar terraform (usando `aws configure` o variables de entorno).
+
+2. **Aplicar los Cambios**:
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply
+   ```
+
+   > [!IMPORTANT]
+   > Puedes modificar la dirección IP de tu Base de Datos en el archivo `terraform/variables.tf` (variable `db_host`) antes de aplicar para que los contenedores puedan conectarse a tu base de datos existente.
+
+---
+
+## 🔐 Variables de Entorno y Parámetros CI/CD (GitHub Secrets)
+
+Los pipelines han sido modificados para hacer push a ECR y luego registrar/desplegar la Task Definition hacia ECS.
+Debes configurar en **Settings** -> **Secrets and variables** -> **Actions**:
 
 ### Credenciales de AWS (Requeridas)
-> [!WARNING]
-> Las credenciales en **negrita** expiran y deben actualizarse **cada 4 horas**.
+> [!CAUTION]
+> **NUNCA pegues estas credenciales en texto plano (ni en README, ni en código, ni en chats de AI).** Configúralas exclusivamente como secretos en GitHub.
 
 * **`AWS_ACCESS_KEY_ID`**
 * **`AWS_SECRET_ACCESS_KEY`**
 * **`AWS_SESSION_TOKEN`**
-* `AWS_REGION`
 
 ### Registros de Imágenes (Amazon ECR)
 * `ECR_REGISTRY`
-* `ECR_REPO_URL_DB`
-* `ECR_REPO_URL_BACKEND`
+* `ECR_REPO_URL_BACKEND` (Ej: `123456789.dkr.ecr.us-east-1.amazonaws.com/tienda-backend`)
 * `ECR_REPO_URL_FRONTEND`
 
-### Destinos de Despliegue (Instancias EC2)
-* `EC2_DB_INSTANCE_ID`
-* `EC2_BACKEND_INSTANCE_ID`
-* `EC2_FRONTEND_INSTANCE_ID`
+---
+
+## 🚀 Flujo del Pipeline CI/CD (GitHub Actions)
+
+Los archivos `cicd-tienda-backend.yml` y `cicd-tienda-frontend.yml` automatizan el despliegue a ECS:
+
+1. **Trigger**: Se dispara al realizar `push` a la rama `main` (o `deploy`) con cambios en las carpetas respectivas.
+2. **Build & Push**: Construye las imágenes Docker y hace push a Amazon ECR etiquetadas con el SHA del commit.
+3. **Descarga de Task Definition**: Recupera la Task Definition activa en el clúster ECS utilizando AWS CLI.
+4. **Renderización (aws-actions/amazon-ecs-render-task-definition)**: Actualiza la imagen en la Task Definition con el nuevo tag de ECR.
+5. **Despliegue a ECS (aws-actions/amazon-ecs-deploy-task-definition)**: Registra la nueva Task Definition y actualiza el Servicio en ECS. Espera hasta que el servicio sea estable.
 
 ---
 
-## 🚀 Flujo y Lógica del Pipeline CI/CD
+## 📊 Autoscaling y Métricas (CloudWatch)
 
-Cada uno de los tres archivos de workflow (`cicd-tienda-db.yml`, `cicd-tienda-backend.yml`, y `cicd-tienda-frontend.yml`) ejecuta de forma aislada las siguientes etapas:
-
-1. **Trigger Condicional (`on: push`)**: El pipeline se dispara hacia la rama `main` solo si se detectan cambios específicos dentro de la carpeta de la capa correspondiente (`db/`, `backend/` o `frontend/`).
-2. **Checkout & Auth**: Descarga el código en el runner temporal y configura las credenciales de AWS utilizando variables de entorno protegidas.
-3. **Registry Login**: Autentica el runner contra Amazon ECR (Elastic Container Registry).
-4. **Build & Push**: Construye la imagen Docker local mediante el `Dockerfile` de la capa, la etiqueta con la URL del registro y la sube a ECR.
-5. **Deploy Remoto (SSM)**: Utiliza AWS Systems Manager (SSM) `send-command` para conectarse de forma segura a la instancia EC2 asignada sin exponer puertos SSH directos.
-6. **Ejecución en EC2**: Remotamente, la instancia EC2 realiza login en ECR, ejecuta un `docker pull` de la nueva imagen, detiene/elimina el contenedor antiguo y levanta el nuevo contenedor.
-
-> [!IMPORTANT]
-> Antes de ejecutar los pipelines, recuerde agregar el rol IAM correspondiente a las instancias EC2, instalar Docker, y activar/arrancar el servicio de SSM Agent en cada una de las máquinas.
-
----
-
-## 🛠️ Comandos Útiles para Verificación y Debugging
-
-Si necesita interactuar con las instancias EC2 o verificar fallos, los comandos clave definidos en la guía son:
-
-* **Estado de los contenedores**:
-  ```bash
-  docker ps
-  ```
-
-* **Inspección de fallos (logs)**:
-  ```bash
-  docker logs [nombre-contenedor]
-  ```
-
-* **Verificación de persistencia/datos (en la DB)**:
-  ```bash
-  sudo docker exec -it tienda-db mysql -u root -padmin123 -e "USE tienda_luktek; SELECT * FROM productos;"
-  ```
+- **Target Tracking**: ECS está configurado para autoescalar basado en la métrica `ECSServiceAverageCPUUtilization` (objetivo del 50%).
+- **Logs**: Todos los logs de los contenedores (`/ecs/tienda-frontend`, `/ecs/tienda-ventas`, `/ecs/tienda-despachos`) se envían automáticamente a **Amazon CloudWatch**.
