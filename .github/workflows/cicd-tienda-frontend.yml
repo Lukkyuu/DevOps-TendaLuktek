@@ -3,6 +3,7 @@ name: CI/CD Tienda Frontend
 on:
   push:
     branches: [ deploy ]
+  workflow_dispatch:
     paths:
       - 'frontend/**'
       - '.github/workflows/cicd-tienda-frontend.yml'
