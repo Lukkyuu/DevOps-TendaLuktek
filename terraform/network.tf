@@ -94,19 +94,21 @@ resource "aws_security_group" "ecs_tasks_sg" {
     security_groups = [aws_security_group.alb_sg.id]
   }
 
-  # Acceso interno entre contenedores (Front -> Back)
+  # Acceso interno entre contenedores (Front -> Back) y desde el ALB
   ingress {
-    from_port = 8080
-    to_port   = 8080
-    protocol  = "tcp"
-    self      = true
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    self            = true
+    security_groups = [aws_security_group.alb_sg.id]
   }
 
   ingress {
-    from_port = 8081
-    to_port   = 8081
-    protocol  = "tcp"
-    self      = true
+    from_port       = 8081
+    to_port         = 8081
+    protocol        = "tcp"
+    self            = true
+    security_groups = [aws_security_group.alb_sg.id]
   }
 
   egress {

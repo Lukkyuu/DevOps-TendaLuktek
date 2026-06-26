@@ -13,7 +13,7 @@ variable "vpc_cidr" {
 variable "db_host" {
   description = "IP o Hostname de la Base de Datos Existente"
   type        = string
-  default     = "10.0.1.100" 
+  default     = "54.243.8.50" 
 }
 variable "ecr_frontend_url" {
   type = string
