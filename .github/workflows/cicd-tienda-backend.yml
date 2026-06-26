@@ -3,10 +3,10 @@ name: CI/CD Tienda Backend
 on:
   push:
     branches: [ deploy ]
-  workflow_dispatch:
     paths:
       - 'backend/**'
       - '.github/workflows/cicd-tienda-backend.yml'
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
